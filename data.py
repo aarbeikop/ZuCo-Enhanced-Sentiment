@@ -35,19 +35,27 @@ class SentimentDataSet(Dataset):
         aligned_features = []
         word_index = 0
 
-        for token_id in input_ids:
+        for i, token_id in enumerate(input_ids):
             token = self.tokenizer.convert_ids_to_tokens(token_id.item())
 
             if token in ['[CLS]', '[SEP]']:
                 aligned_features.append([0.0] * (word_features.shape[1] - 1))
             elif token.startswith('##') and word_index < len(word_features):
-                aligned_features.append(word_features.iloc[word_index][1:].tolist())  # Repeat features for subword tokens
+                # Average features of the previous and next word
+                prev_features = word_features.iloc[word_index - 1][1:].tolist() if word_index > 0 else [0.0] * (word_features.shape[1] - 1)
+                next_features = word_features.iloc[word_index][1:].tolist() if word_index < len(word_features) else [0.0] * (word_features.shape[1] - 1)
+                avg_features = [(f + n) / 2 for f, n in zip(prev_features, next_features)]
+                aligned_features.append(avg_features)
             else:
                 if word_index < len(word_features) and token == word_features.iloc[word_index]['content']:
                     aligned_features.append(word_features.iloc[word_index][1:].tolist())
                     word_index += 1
                 else:
-                    aligned_features.append([0.0] * (word_features.shape[1] - 1))  # Default features for unmatched tokens
+                    # Average features with adjacent tokens if possible
+                    prev_features = aligned_features[-1] if i > 0 else [0.0] * (word_features.shape[1] - 1)
+                    next_features = word_features.iloc[word_index][1:].tolist() if word_index < len(word_features) else [0.0] * (word_features.shape[1] - 1)
+                    avg_features = [(f + n) / 2 for f, n in zip(prev_features, next_features)]
+                    aligned_features.append(avg_features)
 
         return tokenized_sentence, torch.tensor(aligned_features, dtype=torch.float32)
 
