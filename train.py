@@ -23,9 +23,9 @@ def print_metrics(metrics, split):
 def get_metrics(targets, predictions, average_method):
     return {
         'accuracy': accuracy_score(targets, predictions),
-        'f1': f1_score(targets, predictions, average=average_method),
-        'precision': precision_score(targets, predictions, average=average_method),
-        'recall': recall_score(targets, predictions, average=average_method)
+        'f1': f1_score(targets, predictions, average=average_method, zero_division=0),
+        'precision': precision_score(targets, predictions, average=average_method, zero_division=0),
+        'recall': recall_score(targets, predictions, average=average_method, zero_division=0)
     }
 
 def iterate(dataloader, model, loss_fn, optimizer, train=True):
@@ -34,40 +34,30 @@ def iterate(dataloader, model, loss_fn, optimizer, train=True):
     all_predictions = []
 
     for batch in dataloader:
-        # Extract data from the batch
+        # Extract and check data
         input_ids, attention_mask, et_features, targets = batch['input_ids'], batch['attention_mask'], batch['et_features'], batch['labels']
+        for tensor in [input_ids, attention_mask, et_features, targets]:
+            if tensor is not None and (torch.isnan(tensor).any() or torch.isinf(tensor).any()):
+                raise ValueError("NaN or Inf in tensor")
 
-        # Move data to GPU if available
         if torch.cuda.is_available():
-            input_ids = input_ids.cuda()
-            attention_mask = attention_mask.cuda()
+            input_ids, attention_mask, targets = input_ids.cuda(), attention_mask.cuda(), targets.cuda()
             et_features = et_features.cuda() if et_features is not None else None
-            targets = targets.cuda()
 
-        # Forward pass
-        logits = model(input_ids, attention_mask, et_features)
-        loss = loss_fn(logits, targets)
+        with torch.autograd.set_detect_anomaly(True):
+            logits = model(input_ids, attention_mask, et_features)
+            loss = loss_fn(logits, targets)
 
-        # Backward pass and optimization
-        if train:
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            if train:
+                optimizer.zero_grad()
+                loss.backward()
+                clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
+                optimizer.step()
 
-        # Store predictions and targets
         all_targets.extend(targets.cpu().numpy())
         all_predictions.extend(torch.softmax(logits, dim=1).argmax(dim=1).cpu().numpy())
         epoch_loss += loss.item()
 
-        # Debugging print statements
-        print("Batch targets:", targets.cpu().numpy())
-        print("Batch predictions:", torch.softmax(logits, dim=1).argmax(dim=1).cpu().numpy())
-
-    # Debugging print statements for entire epoch
-    print("Epoch targets:", all_targets)
-    print("Epoch predictions:", all_predictions)
-
-    # Compute and return metrics
     return epoch_loss, get_metrics(all_targets, all_predictions, 'macro' if model.num_labels > 2 else 'binary')
 
 
@@ -85,32 +75,27 @@ def main():
     train_metrics = init_metrics()
     test_metrics = init_metrics()
 
-    best_val_loss = float('inf')  # Initialize best validation loss as infinity
-    best_model_state = None  # Variable to store the best model state
+    best_val_loss = float('inf')
+    best_model_state = None
 
     for k, (train_loader, test_loader) in enumerate(dataset.split_cross_val(10)):
         model = BertSentimentClassifier(lstm_units, args.num_sentiments, args.use_gaze)
-        optimizer = Adam(model.parameters(), lr=0.001)
-        scheduler = StepLR(optimizer, step_size=1, gamma=0.9)  # Learning rate scheduler (if used)
+        optimizer = Adam(model.parameters(), lr=0.001)  # Consider reducing lr if needed
 
-        # Training loop
-        for e in range(10):  # 10 epochs
+        for e in range(10):
             train_loss, train_results = iterate(train_loader, model, XE_loss, optimizer)
             test_loss, test_results = iterate(test_loader, model, XE_loss, optimizer, train=False)
 
-            # Print metrics
             print(f'Epoch {e + 1}:')
             print_metrics(train_results, 'TRAIN')
             print_metrics(test_results, 'TEST')
 
-            # Check if the current model is the best one
             if test_loss < best_val_loss:
                 best_val_loss = test_loss
-                best_model_state = model.state_dict()  # Save the best model state
+                best_model_state = model.state_dict()
 
-            scheduler.step()  # Step the learning rate scheduler
+            scheduler.step()
 
-    # Save the best model to a file after training is complete
     if best_model_state is not None:
         torch.save(best_model_state, 'best_model.pth')
 
@@ -120,4 +105,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
