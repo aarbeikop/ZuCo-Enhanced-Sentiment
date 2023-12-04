@@ -4,7 +4,7 @@ import numpy as np
 from argparse import ArgumentParser
 import torch
 from torch.optim import Adam
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 from torch.nn.utils import clip_grad_norm_
 from torch.nn import BCELoss, CrossEntropyLoss
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
@@ -39,8 +39,7 @@ def get_metrics(targets, predictions, scores, average_method):
     return metrics
 
 def print_metrics(metrics, prefix=''):
-    print(f'{prefix} Accuracy: {metrics["accuracy"]:.4f}, Precision: {metrics["precision"]:.4f}, Recall: {metrics["recall"]:.4f},F1: {metrics["f1"]:.4f}, ROC-AUC: {metrics["roc_auc"]:.4f}')
-    return 
+    print(f'{prefix} Accuracy: {metrics["accuracy"]:.4f}, Precision: {metrics["precision"]:.4f}, Recall: {metrics["recall"]:.4f}, F1: {metrics["f1"]:.4f}, ROC-AUC: {metrics["roc_auc"]:.4f}')
 
 def iterate(dataloader, model, loss_fn, optimizer, l1_lambda=0.001, train=True):
     epoch_loss = 0.0
@@ -49,7 +48,6 @@ def iterate(dataloader, model, loss_fn, optimizer, l1_lambda=0.001, train=True):
     all_scores = []
 
     for batch in dataloader:
-        # Extract and check data
         input_ids, attention_mask, et_features, targets = batch['input_ids'], batch['attention_mask'], batch['et_features'], batch['labels']
         if torch.cuda.is_available():
             input_ids, attention_mask, targets = input_ids.cuda(), attention_mask.cuda(), targets.cuda()
@@ -58,10 +56,7 @@ def iterate(dataloader, model, loss_fn, optimizer, l1_lambda=0.001, train=True):
         with torch.autograd.set_detect_anomaly(True):
             logits = model(input_ids, attention_mask, et_features)
 
-         
-            # Squeeze logits to match the shape of targets
             logits = logits.squeeze()
-            # Targets should also be a float tensor with the same shape
             targets = targets.float()
             loss = loss_fn(logits, targets)
 
@@ -82,8 +77,6 @@ def iterate(dataloader, model, loss_fn, optimizer, l1_lambda=0.001, train=True):
     average_method = 'binary' if loss_fn == BCELoss else 'macro'
     return epoch_loss, all_scores, get_metrics(all_targets, all_predictions, all_scores, average_method)
 
-
-
 def main():
     parser = ArgumentParser()
     parser.add_argument('--num-sentiments', type=int, default=2, help='2: binary classification, 3: ternary.')
@@ -92,22 +85,24 @@ def main():
     args = parser.parse_args()
 
     dataset = SentimentDataSet('sentiment_labels_task1.csv', args.word_features_file)
-    lstm_units = 300 if args.num_sentiments == 2 else 150
+    lstm_units = 400
 
-    loss_fn = BCELoss() if args.num_sentiments == 2 else CrossEntropyLoss()
+    loss_fn = BCELoss() 
     train_metrics = init_metrics()
     test_metrics = init_metrics()
 
     best_val_loss = float('inf')
     best_model_state = None
+    no_improvement_epochs = 0
+    early_stopping_patience = 3
 
     for k, (train_loader, test_loader) in enumerate(dataset.split_cross_val(5)):
         model = BertSentimentClassifier(lstm_units, args.num_sentiments, args.use_gaze)
         if torch.cuda.is_available():
             model = model.cuda()
 
-        optimizer = Adam(model.parameters(), lr=0.001)
-        scheduler = StepLR(optimizer, step_size=2, gamma=0.90)
+        optimizer = Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+        scheduler = ReduceLROnPlateau(optimizer, 'min', patience=2, verbose=True)
 
         for e in range(10):
             train_loss, train_scores, train_results = iterate(train_loader, model, loss_fn, optimizer)
@@ -123,14 +118,21 @@ def main():
 
             if test_loss < best_val_loss:
                 best_val_loss = test_loss
+                no_improvement_epochs = 0
                 best_model_state = model.state_dict()
+            else:
+                no_improvement_epochs += 1
 
-            scheduler.step()
+            if no_improvement_epochs >= early_stopping_patience:
+                print("Early stopping triggered")
+                break
+
+            scheduler.step(test_loss)
 
     if best_model_state is not None:
         torch.save(best_model_state, 'best_model.pth')
 
-    print('\n\n> 10-fold CV done')
+    print('\n\n> 5-fold CV done')
     print_metrics({'accuracy': np.mean(train_metrics['accuracy']), 
                    'precision': np.mean(train_metrics['precision']), 
                    'recall': np.mean(train_metrics['recall']), 
