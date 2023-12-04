@@ -7,18 +7,21 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
 class SentimentDataSet(Dataset):
-    def __init__(self, sentences_file, word_features_file, max_length=128):
+    def __init__(self, sentences_file, word_features_file, max_length=500):
         self.sentences_data = pd.read_csv(sentences_file, delimiter=';')
         self.sentences_data = self.sentences_data.dropna(subset=['sentiment_label'])
 
+        # Convert sentiment labels to binary (0: non-positive, 1: positive) 
+        self.sentences_data['sentiment_label'] = self.sentences_data['sentiment_label'].apply(lambda x: 0 if x == -1 else 1)
+
         self.word_features = pd.read_csv(word_features_file)
-        self.preprocess_features()  # Normalize the cognitive features
+        self.preprocess_features()
 
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         self.max_length = max_length
 
     def preprocess_features(self):
-        # Replace empty lists with zeros and convert to floats
+        # Replace empty lists with zeros and convert to floats. 
         for col in self.word_features.columns:
             if col != 'content':
                 self.word_features[col] = self.word_features[col].apply(lambda x: 0.0 if x == '[]' else float(x))
@@ -41,12 +44,13 @@ class SentimentDataSet(Dataset):
             if token in ['[CLS]', '[SEP]']:
                 aligned_features.append([0.0] * (word_features.shape[1] - 1))
             elif token.startswith('##') and word_index < len(word_features):
-                # Average features of the previous and next word
+                # Average features of the previous and next word to handle subwords
                 prev_features = word_features.iloc[word_index - 1][1:].tolist() if word_index > 0 else [0.0] * (word_features.shape[1] - 1)
                 next_features = word_features.iloc[word_index][1:].tolist() if word_index < len(word_features) else [0.0] * (word_features.shape[1] - 1)
-                avg_features = [(f + n) / 2 for f, n in zip(prev_features, next_features)]
+                avg_features = [(f + n) / 2 for f, n in zip(prev_features, next_features)] #
                 aligned_features.append(avg_features)
             else:
+                # Check if the token matches the word in the word features, and if so, append the features
                 if word_index < len(word_features) and token == word_features.iloc[word_index]['content']:
                     aligned_features.append(word_features.iloc[word_index][1:].tolist())
                     word_index += 1
@@ -89,9 +93,9 @@ class SentimentDataSet(Dataset):
         # Align the features with the tokens, and return the tokenized sentence and the aligned features
         tokenized_sentence, et_features = self.align_features_with_tokens(sentence, word_features_for_sentence)
 
-        # Get the original label and map it from [-1, 0, 1] to [0, 1, 2], due to the way CrossEntropyLoss expects the labels
+        # Convert the sentiment label from [-1, 0, 1] to binary [0, 1]
         label = sentence_row['sentiment_label']
-        label_mapped = int(label) + 1
+        label_binary = 0 if label == 0 else 1
 
         input_ids = tokenized_sentence['input_ids'].squeeze(0)
         attention_mask = tokenized_sentence['attention_mask'].squeeze(0)
@@ -100,8 +104,9 @@ class SentimentDataSet(Dataset):
             'input_ids': input_ids,
             'attention_mask': attention_mask,
             'et_features': et_features,
-            'labels': torch.tensor(label_mapped, dtype=torch.long)
+            'labels': torch.tensor(label_binary, dtype=torch.long)
         }
+
 
 
     def get_split(self, indices):
