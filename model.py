@@ -3,7 +3,7 @@ from torch import nn
 from transformers import BertModel
 
 class BertSentimentClassifier(nn.Module):
-    def __init__(self, hidden_size, num_labels, use_cognitive_features=True, cognitive_feature_size=5, dropout_prob=0.1, fine_tune_layers=4):
+    def __init__(self, hidden_size, num_labels, use_cognitive_features=False, cognitive_feature_size=5, dropout_prob=0.1, fine_tune_layers=4):
         super(BertSentimentClassifier, self).__init__()
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         self.use_cognitive_features = use_cognitive_features
@@ -16,7 +16,7 @@ class BertSentimentClassifier(nn.Module):
         if use_cognitive_features:
             bert_output_size += cognitive_feature_size
 
-        self.lstm = nn.LSTM(input_size=bert_output_size, hidden_size=hidden_size, num_layers=1, batch_first=True, bidirectional=True)
+        self.lstm = nn.LSTM(input_size=bert_output_size, hidden_size=hidden_size, num_layers=2, batch_first=True, bidirectional=True)
 
         # Layer normalization
         self.layer_norm = nn.LayerNorm(2 * hidden_size)
@@ -35,7 +35,7 @@ class BertSentimentClassifier(nn.Module):
 
     def forward(self, input_ids, attention_mask, cognitive_features=None):
         with torch.no_grad():
-            bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)['last_hidden_state']
+            bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)['last_hidden_state'] 
 
         if self.use_cognitive_features and cognitive_features is not None:
             combined_input = torch.cat((bert_output, cognitive_features), dim=2)
