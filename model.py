@@ -4,7 +4,7 @@ from transformers import BertModel
 
 class BertSentimentClassifier(nn.Module):
     def __init__(self, hidden_size, num_labels, use_cognitive_features=True
-                 , cognitive_feature_size=5):
+                 , cognitive_feature_size=5, dropout_prob=0.1):
         super(BertSentimentClassifier, self).__init__()
         self.num_labels = num_labels
         self.use_cognitive_features = use_cognitive_features
@@ -19,10 +19,11 @@ class BertSentimentClassifier(nn.Module):
         # Using a bidirectional LSTM
         self.lstm = nn.LSTM(input_size=bert_output_size, 
                             hidden_size=hidden_size, 
-                            num_layers=1, 
+                            num_layers=2,  
                             batch_first=True, 
-                            bidirectional=True,
-                            dropout=dropout_prob)
+                            bidirectional=True, 
+                            dropout=0.1) 
+
 
         # Dropout layer
         self.dropout = nn.Dropout(dropout_prob)

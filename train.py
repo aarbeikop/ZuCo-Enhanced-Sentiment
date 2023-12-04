@@ -84,8 +84,12 @@ def main():
     best_model_state = None
 
     for k, (train_loader, test_loader) in enumerate(dataset.split_cross_val(10)):
-        model = BertSentimentClassifier(lstm_units, args.num_sentiments, args.use_gaze)
+
+        dropout_prob = 0.1  # Set your desired dropout probability
+        model = BertSentimentClassifier(lstm_units, args.num_sentiments, args.use_gaze, dropout_prob=dropout_prob)
         optimizer = Adam(model.parameters(), lr=0.001, weight_decay=1e-5)  # Add weight_decay for L2 regularization
+        scheduler = StepLR(optimizer, step_size=5, gamma=0.5)
+
         for e in range(10):
             train_loss, train_results = iterate(train_loader, model, XE_loss, optimizer)
             test_loss, test_results = iterate(test_loader, model, XE_loss, optimizer, train=False)
