@@ -21,7 +21,17 @@ class BertSentimentClassifier(nn.Module):
                             hidden_size=hidden_size, 
                             num_layers=1, 
                             batch_first=True, 
-                            bidirectional=True)
+                            bidirectional=True,
+                            dropout=dropout_prob)
+
+        # Dropout layer
+        self.dropout = nn.Dropout(dropout_prob)
+
+        # Classifier with dropout
+        self.classifier = nn.Sequential(
+            nn.Linear(2 * hidden_size, num_labels),
+            nn.Dropout(dropout_prob)
+        )
 
         # Attention layer
         self.attention = nn.Linear(2 * hidden_size, 1)

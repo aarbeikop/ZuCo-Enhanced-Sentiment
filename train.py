@@ -5,6 +5,7 @@ import torch
 from torch import softmax
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR  # Import StepLR from torch.optim.lr_scheduler
+from torch.nn.utils import clip_grad_norm_
 from torch.nn import CrossEntropyLoss
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
@@ -28,7 +29,7 @@ def get_metrics(targets, predictions, average_method):
         'recall': recall_score(targets, predictions, average=average_method, zero_division=0)
     }
 
-def iterate(dataloader, model, loss_fn, optimizer, train=True):
+def iterate(dataloader, model, loss_fn, optimizer, l1_lambda=0.001, train=True):
     epoch_loss = 0.0
     all_targets = []
     all_predictions = []
@@ -47,6 +48,10 @@ def iterate(dataloader, model, loss_fn, optimizer, train=True):
         with torch.autograd.set_detect_anomaly(True):
             logits = model(input_ids, attention_mask, et_features)
             loss = loss_fn(logits, targets)
+
+            if l1_lambda > 0:  # Apply L1 regularization
+                l1_penalty = sum(p.abs().sum() for p in model.parameters())
+                loss += l1_lambda * l1_penalty
 
             if train:
                 optimizer.zero_grad()
@@ -80,8 +85,7 @@ def main():
 
     for k, (train_loader, test_loader) in enumerate(dataset.split_cross_val(10)):
         model = BertSentimentClassifier(lstm_units, args.num_sentiments, args.use_gaze)
-        optimizer = Adam(model.parameters(), lr=0.001)  # Consider reducing lr if needed
-
+        optimizer = Adam(model.parameters(), lr=0.001, weight_decay=1e-5)  # Add weight_decay for L2 regularization
         for e in range(10):
             train_loss, train_results = iterate(train_loader, model, XE_loss, optimizer)
             test_loss, test_results = iterate(test_loader, model, XE_loss, optimizer, train=False)
