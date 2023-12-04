@@ -3,7 +3,7 @@ from torch import nn
 from transformers import BertModel
 
 class BertSentimentClassifier(nn.Module):
-    def __init__(self, hidden_size, num_labels, use_cognitive_features=True
+    def __init__(self, hidden_size, num_labels, use_cognitive_features=True # set to False to use only BERT features
                  , cognitive_feature_size=5, dropout_prob=0.1):
         super(BertSentimentClassifier, self).__init__()
         self.num_labels = num_labels
@@ -16,7 +16,7 @@ class BertSentimentClassifier(nn.Module):
         if use_cognitive_features:
             bert_output_size += cognitive_feature_size
 
-        # Using a bidirectional LSTM
+        # Using a bidirectional LSTM with 2 layers and dropout (previously used 1 layer, but 2 layers improved the results)
         self.lstm = nn.LSTM(input_size=bert_output_size, 
                             hidden_size=hidden_size, 
                             num_layers=2,  
@@ -30,7 +30,7 @@ class BertSentimentClassifier(nn.Module):
 
         # Classifier with dropout
         self.classifier = nn.Sequential(
-            nn.Linear(2 * hidden_size, num_labels),
+            nn.Linear(2 * hidden_size, num_labels), # 2 * hidden_size because of bidirectional LSTM
             nn.Dropout(dropout_prob)
         )
 
@@ -40,11 +40,11 @@ class BertSentimentClassifier(nn.Module):
         # Adjusting the classifier to take the concatenated output
         self.classifier = nn.Linear(2 * hidden_size, num_labels)
 
-    def forward(self, input_ids, attention_mask, cognitive_features=None):
+    def forward(self, input_ids, attention_mask, cognitive_features=None): 
         with torch.no_grad():
             bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)['last_hidden_state']
 
-        if self.use_cognitive_features and cognitive_features is not None:
+        if self.use_cognitive_features and cognitive_features is not None: # Concatenate the BERT output with the cognitive features if set to True
             combined_input = torch.cat((bert_output, cognitive_features), dim=2)
         else:
             combined_input = bert_output
