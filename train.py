@@ -4,16 +4,14 @@ import numpy as np
 from argparse import ArgumentParser
 import torch
 from torch.optim import Adam
-from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn.utils import clip_grad_norm_
-from torch.nn import BCELoss, CrossEntropyLoss
+from torch.nn import BCELoss
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import StratifiedShuffleSplit
-from sklearn.model_selection import train_test_split
 
 from model import BertSentimentClassifier
 from data import SentimentDataSet
-
 
 def init_metrics():
     return {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'roc_auc': []}
@@ -24,11 +22,8 @@ def get_metrics(targets, predictions, scores, average_method):
         'f1': f1_score(targets, predictions, average=average_method, zero_division=0),
         'precision': precision_score(targets, predictions, average=average_method, zero_division=0),
         'recall': recall_score(targets, predictions, average=average_method, zero_division=0),
+        'roc_auc': roc_auc_score(targets, scores[:, 1]) if average_method == 'binary' else roc_auc_score(targets, scores, multi_class='ovr')
     }
-    if average_method == 'binary':
-        metrics['roc_auc'] = roc_auc_score(targets, scores[:, 1])
-    elif average_method == 'macro':
-        metrics['roc_auc'] = roc_auc_score(targets, scores, multi_class='ovr')
     return metrics
 
 def print_metrics(metrics, prefix=''):
@@ -73,6 +68,10 @@ def iterate(dataloader, model, loss_fn, optimizer, l1_lambda=0.001, train=True):
     average_method = 'binary' if loss_fn == BCELoss else 'macro'
     return epoch_loss, all_scores, get_metrics(all_targets, all_predictions, all_scores, average_method)
 
+def adjust_learning_rate(optimizer, factor=0.5):
+    for param_group in optimizer.param_groups:
+        param_group['lr'] *= factor
+
 def main():
     parser = ArgumentParser()
     parser.add_argument('--num-sentiments', type=int, default=2, help='2: binary classification, 3: ternary.')
@@ -89,33 +88,30 @@ def main():
     best_val_loss = float('inf')
     best_model_state = None
     early_stopping_patience = 5
+    adjustment_factor = 0.5  # Learning rate adjustment factor
 
     labels = dataset.sentences_data['sentiment_label'].values
     sss = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=42)
 
-    for train_index, test_index in sss.split(np.zeros(len(labels)), labels):
-        train_index, val_index = train_test_split(train_index, test_size=0.2, random_state=42)
+    for train_index, val_index in sss.split(np.zeros(len(labels)), labels):
         train_loader = dataset.get_split(train_index)
         val_loader = dataset.get_split(val_index)
-        test_loader = dataset.get_split(test_index)
 
         model = BertSentimentClassifier(lstm_units, args.num_sentiments, args.use_gaze)
         if torch.cuda.is_available():
             model = model.cuda()
 
-        optimizer = Adam(model.parameters(), lr=0.001, weight_decay=2e-5)
-        scheduler = ReduceLROnPlateau(optimizer, 'min', patience=3, verbose=True)
+        optimizer = Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+        scheduler = ReduceLROnPlateau(optimizer, 'min', patience=5, verbose=True)
 
         no_improvement_epochs = 0
         for e in range(10):
             train_loss, train_scores, train_results = iterate(train_loader, model, loss_fn, optimizer)
             val_loss, val_scores, val_results = iterate(val_loader, model, loss_fn, optimizer, train=False)
-            test_loss, test_scores, test_results = iterate(test_loader, model, loss_fn, optimizer, train=False)
 
             print(f'\nEpoch {e + 1}:')
             print_metrics(train_results, 'TRAIN')
             print_metrics(val_results, 'VAL')
-            print_metrics(test_results, 'TEST')
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -125,8 +121,10 @@ def main():
                 no_improvement_epochs += 1
 
             if no_improvement_epochs >= early_stopping_patience:
-                print("Early stopping triggered")
-                break
+                print("Adjusting learning rate...")
+                adjust_learning_rate(optimizer, factor=adjustment_factor)
+                no_improvement_epochs = 0  # Reset early stopping counter
+                model.load_state_dict(best_model_state)  # Optional: revert to best state
 
             scheduler.step(val_loss)
 
@@ -134,7 +132,6 @@ def main():
         for metric in train_results:
             train_metrics[metric].append(train_results[metric])
             val_metrics[metric].append(val_results[metric])
-            #test_results[metric].append(test_results[metric]) can't append numpy.float
 
     if best_model_state is not None:
         torch.save(best_model_state, 'best_model.pth')
@@ -143,7 +140,6 @@ def main():
     print('\n\n> 5-fold CV done')
     print_mean_metrics(train_metrics, 'TRAIN')
     print_mean_metrics(val_metrics, 'VAL')
-    #print_mean_metrics(test_results, 'TEST')
 
 if __name__ == "__main__":
     main()
