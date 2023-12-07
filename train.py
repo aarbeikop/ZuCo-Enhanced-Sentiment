@@ -8,7 +8,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn.utils import clip_grad_norm_
 from torch.nn import BCELoss
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
-from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 
 from model import BertSentimentClassifier
 from data import SentimentDataSet
@@ -91,11 +91,29 @@ def main():
     adjustment_factor = 0.5  # Learning rate adjustment factor
 
     labels = dataset.sentences_data['sentiment_label'].values
-    sss = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=42)
+    print(sum([1 for l in labels if l == 0]))
+    print(sum(labels))
+    
+   # train_val_index, test_index = train_test_split(np.arange(len(labels)), test_size=0.2, stratify=labels, random_state=42)
+    #train_val_labels = labels[train_val_index]
+    
+
+    # K-Fold Cross-Validation on the remaining data
+    sss = StratifiedShuffleSplit(n_splits=10, test_size=0.2, random_state=42)
+    best_model_state = None
+    best_val_loss = float('inf')
+    train_metrics = init_metrics()
+    val_metrics = init_metrics()
+    test_metrics = init_metrics()
 
     for train_index, val_index in sss.split(np.zeros(len(labels)), labels):
+        val_index, test_index = train_test_split(val_index, test_size=0.5, random_state=42)
         train_loader = dataset.get_split(train_index)
         val_loader = dataset.get_split(val_index)
+        test_loader = dataset.get_split(test_index)
+
+        print(f'sum of negative labels in train split {sum([1 for l in labels[train_index] if l == 0])}')
+        print(sum(labels[train_index]))
 
         model = BertSentimentClassifier(lstm_units, args.num_sentiments, args.use_gaze)
         if torch.cuda.is_available():
@@ -106,6 +124,7 @@ def main():
 
         no_improvement_epochs = 0
         for e in range(10):
+            # Adjusting the assignment to capture all three returned values
             train_loss, train_scores, train_results = iterate(train_loader, model, loss_fn, optimizer)
             val_loss, val_scores, val_results = iterate(val_loader, model, loss_fn, optimizer, train=False)
 
@@ -123,8 +142,8 @@ def main():
             if no_improvement_epochs >= early_stopping_patience:
                 print("Adjusting learning rate...")
                 adjust_learning_rate(optimizer, factor=adjustment_factor)
-                no_improvement_epochs = 0  # Reset early stopping counter
-                model.load_state_dict(best_model_state)  # Optional: revert to best state
+                no_improvement_epochs = 0
+                model.load_state_dict(best_model_state)
 
             scheduler.step(val_loss)
 
@@ -132,14 +151,30 @@ def main():
         for metric in train_results:
             train_metrics[metric].append(train_results[metric])
             val_metrics[metric].append(val_results[metric])
+        
+        # Test Set Evaluation
+        test_loss, test_scores, test_results = iterate(test_loader, model, loss_fn, optimizer, train=False)
+        print('\nTest Metrics:')
+        print_metrics(test_results, 'TEST')
+        for metric in test_results:
+            test_metrics[metric].append(test_results[metric])
 
+
+    # Save the best model
     if best_model_state is not None:
         torch.save(best_model_state, 'best_model.pth')
+        model.load_state_dict(best_model_state)
+
+    # Test Set Evaluation
+    #test_loss, test_results = iterate(test_loader, model, loss_fn, optimizer, train=False)
+    #print('\nTest Metrics:')
+    #print_metrics(test_results, 'TEST')
 
     # Print mean metrics
-    print('\n\n> 5-fold CV done')
+    print('\n\n> 10-fold CV done')
     print_mean_metrics(train_metrics, 'TRAIN')
     print_mean_metrics(val_metrics, 'VAL')
-
+    print_mean_metrics(test_metrics, 'TEST')
+    
 if __name__ == "__main__":
     main()
