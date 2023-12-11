@@ -118,8 +118,7 @@ def main():
         return errors
 
     
-
-    # K-Fold Cross-Validation on the remaining data
+    # K-Fold Cross-Validation on the data
     sss = StratifiedShuffleSplit(n_splits=10, test_size=0.2, random_state=42)
     best_model_state = None
     best_val_loss = float('inf')
@@ -129,12 +128,22 @@ def main():
 
     for train_index, val_index in sss.split(np.zeros(len(labels)), labels):
         val_index, test_index = train_test_split(val_index, test_size=0.5, random_state=42)
+
+        # Check for overlap of data (leakage)
+        train_set = set(train_index)
+        val_set = set(val_index)
+        test_set = set(test_index)
+
+        assert len(train_set & val_set) == 0, "Overlap found between training and validation sets"
+        assert len(train_set & test_set) == 0, "Overlap found between training and test sets"
+        assert len(val_set & test_set) == 0, "Overlap found between validation and test sets"
+
         train_loader = dataset.get_split(train_index)
         val_loader = dataset.get_split(val_index)
         test_loader = dataset.get_split(test_index)
 
-        print(f'sum of negative labels in train split {sum([1 for l in labels[train_index] if l == 0])}')
-        print(sum(labels[train_index]))
+        #print(f'sum of negative labels in train split {sum([1 for l in labels[train_index] if l == 0])}')
+        #print(sum(labels[train_index]))
 
         model = model = CognitiveFeatureClassifier(lstm_units)
         if torch.cuda.is_available():
