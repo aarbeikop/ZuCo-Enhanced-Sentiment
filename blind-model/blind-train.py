@@ -30,7 +30,11 @@ def print_metrics(metrics, prefix=''):
     print(f'{prefix} Accuracy: {metrics["accuracy"]:.4f}, Precision: {metrics["precision"]:.4f}, Recall: {metrics["recall"]:.4f}, F1: {metrics["f1"]:.4f}, ROC-AUC: {metrics["roc_auc"]:.4f}')
 
 def print_mean_metrics(metrics, prefix=''):
-    print(f'{prefix} Accuracy: {np.mean(metrics["accuracy"]):.4f}, Precision: {np.mean(metrics["precision"]):.4f}, Recall: {np.mean(metrics["recall"]):.4f}, F1: {np.mean(metrics["f1"]):.4f}, ROC-AUC: {np.mean(metrics["roc_auc"]):.4f}')
+    print(f'{prefix} Mean Accuracy: {np.mean(metrics["accuracy"]):.4f}, Std: {np.std(metrics["accuracy"]):.4f}')
+    print(f'{prefix} Mean Precision: {np.mean(metrics["precision"]):.4f}, Std: {np.std(metrics["precision"]):.4f}')
+    print(f'{prefix} Mean Recall: {np.mean(metrics["recall"]):.4f}, Std: {np.std(metrics["recall"]):.4f}')
+    print(f'{prefix} Mean F1: {np.mean(metrics["f1"]):.4f}, Std: {np.std(metrics["f1"]):.4f}')
+    print(f'{prefix} Mean ROC-AUC: {np.mean(metrics["roc_auc"]):.4f}, Std: {np.std(metrics["roc_auc"]):.4f}')
 
 def iterate(dataloader, model, loss_fn, optimizer, l1_lambda=0.001, train=True):
     epoch_loss = 0.0
@@ -79,15 +83,15 @@ def main():
     args = parser.parse_args()
 
     dataset = CognitiveFeatureDataSet('sentiment_labels_task1.csv', "merged_word_data.csv")
-    lstm_units = 400
+    lstm_units = 300
     loss_fn = BCELoss() 
     train_metrics = init_metrics()
     val_metrics = init_metrics()
 
     best_val_loss = float('inf')
     best_model_state = None
-    early_stopping_patience = 1
-    adjustment_factor = 0.5  # Learning rate adjustment factor
+    early_stopping_patience = 2
+    adjustment_factor = 0.5  # Learning rate adjustment factor 
 
     labels = dataset.sentences_data['sentiment_label'].values
     print(sum([1 for l in labels if l == 0]))
@@ -95,6 +99,24 @@ def main():
     
    # train_val_index, test_index = train_test_split(np.arange(len(labels)), test_size=0.2, stratify=labels, random_state=42)
     #train_val_labels = labels[train_val_index]
+
+    def analyze_errors(model, dataloader):
+        model.eval()
+        errors = []
+        original_dataset = dataloader.dataset.dataset  # Accessing the original dataset
+        with torch.no_grad():
+            for i, batch in enumerate(dataloader):
+                et_features, targets = batch['cognitive_features'], batch['labels']
+                outputs = model(et_features)
+                preds = torch.round(outputs).squeeze()
+                indices = dataloader.dataset.indices  # Get the original indices of the samples in the subset
+                for j, (pred, label) in enumerate(zip(preds, targets)):
+                    if pred != label:
+                        original_idx = indices[i * dataloader.batch_size + j]
+                        sentence = original_dataset.sentences_data.iloc[original_idx]['sentence']
+                        errors.append((sentence, label.item(), pred.item()))
+        return errors
+
     
 
     # K-Fold Cross-Validation on the remaining data
@@ -155,19 +177,15 @@ def main():
         test_loss, test_scores, test_results = iterate(test_loader, model, loss_fn, optimizer, train=False)
         print('\nTest Metrics:')
         print_metrics(test_results, 'TEST')
+        errors = analyze_errors(model, val_loader)
+        print(f"Errors in Fold: {errors}")
         for metric in test_results:
-            test_metrics[metric].append(test_results[metric])
-
+            test_metrics[metric].append(test_results[metric])  
 
     # Save the best model
     if best_model_state is not None:
         torch.save(best_model_state, 'best_model.pth')
         model.load_state_dict(best_model_state)
-
-    # Test Set Evaluation
-    #test_loss, test_results = iterate(test_loader, model, loss_fn, optimizer, train=False)
-    #print('\nTest Metrics:')
-    #print_metrics(test_results, 'TEST')
 
     # Print mean metrics
     print('\n\n> 10-fold CV done')

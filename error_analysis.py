@@ -6,9 +6,10 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
 
-def load_model(path):
-    model = BertSentimentClassifier(hidden_size=400, num_labels=2)
-    model.load_state_dict(torch.load(path))
+def load_model(path, hidden_size=400, num_labels=2, use_cognitive_features=False, cognitive_feature_size=5, dropout_prob=0.2):
+    model = BertSentimentClassifier(hidden_size, num_labels, use_cognitive_features, cognitive_feature_size, dropout_prob)
+    model.load_state_dict(torch.load(path, map_location=torch.device('cpu')), strict=False)
+
     model.eval()
     return model
 
@@ -50,6 +51,7 @@ def plot_confusion_matrix(labels, predictions):
     plt.xlabel('Predicted')
     plt.ylabel('True')
     plt.show()
+    plt.savefig('confusion_matrix-Enhanced.png')
 
 def main():
     model_path = 'best_model.pth'

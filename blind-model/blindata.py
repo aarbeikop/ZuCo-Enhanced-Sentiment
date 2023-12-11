@@ -71,7 +71,7 @@ class CognitiveFeatureDataSet(Dataset):
             batch_size=16, shuffle=True
         )
 
-# Example usage
+
 if __name__ == "__main__":
     dataset = CognitiveFeatureDataSet('sentiment_labels_task1.csv', 'merged_word_data.csv')
     for data in dataset:

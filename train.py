@@ -13,6 +13,16 @@ from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 from model import BertSentimentClassifier
 from data import SentimentDataSet
 
+def set_global_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+SEED = 42
+set_global_seed(SEED)
+
 def init_metrics():
     return {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'roc_auc': []}
 
@@ -92,7 +102,7 @@ def main():
 
     best_val_loss = float('inf')
     best_model_state = None
-    early_stopping_patience = 5
+    early_stopping_patience = 2
     adjustment_factor = 0.5  # Learning rate adjustment factor
 
     labels = dataset.sentences_data['sentiment_label'].values
@@ -182,9 +192,6 @@ def main():
     print_mean_metrics(train_metrics, 'TRAIN')
     print_mean_metrics(val_metrics, 'VAL')
     print_mean_metrics(test_metrics, 'TEST')
-    
-    print(val_metrics['accuracy'])
-    print(test_metrics['accuracy'])
 
 if __name__ == "__main__":
     main()
