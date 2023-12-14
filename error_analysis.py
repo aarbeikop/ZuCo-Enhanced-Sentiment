@@ -49,7 +49,8 @@ def print_error_analysis(labels, predictions):
     print(confusion_matrix(labels, predictions))
 
 def perform_t_test(data1, data2):
-    t_stat, p_value = ttest_ind(data1, data2)
+    # Assuming data1 and data2 are arrays of accuracies from multiple runs
+    t_stat, p_value = ttest_ind(data1, data2, equal_var=False)  # Use equal_var=False for unequal variances
     return t_stat, p_value
 
 def plot_confusion_matrix(labels, predictions, file_name):

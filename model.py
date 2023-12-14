@@ -2,6 +2,8 @@ import torch
 from torch import nn
 from transformers import BertModel
 
+# used model.py from https://github.com/chipbautista/zuco-sentiment-analysis to get me started
+
 class BertSentimentClassifier(nn.Module):
     def __init__(self, hidden_size, num_labels, use_cognitive_features=False, cognitive_feature_size=5, dropout_prob=0.2):
         super(BertSentimentClassifier, self).__init__()

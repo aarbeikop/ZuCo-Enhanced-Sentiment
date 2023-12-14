@@ -14,6 +14,8 @@ from sklearn.preprocessing import StandardScaler
 from model import BertSentimentClassifier
 from data import SentimentDataSet
 
+# used train.py from https://github.com/chipbautista/zuco-sentiment-analysis to get me started
+
 def set_global_seed(seed):
     random.seed(seed)
     np.random.seed(seed)

@@ -61,7 +61,7 @@ class SentimentDataSet(Dataset):
                     word_index += 1
 
                 if word_index < len(word_features):
-                    aligned_features.append(word_features.iloc[word_index][1:6].tolist()) # we only want the first 5 features not including the word content
+                    aligned_features.append(word_features.iloc[word_index][6:].tolist()) # we only want the averaged features
                 else:
                     aligned_features.append([0.0] * 5)  # default to zero if no matching feature found
 
