@@ -9,6 +9,7 @@ from torch.nn.utils import clip_grad_norm_
 from torch.nn import BCELoss
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
+from sklearn.preprocessing import StandardScaler
 
 from model import BertSentimentClassifier
 from data import SentimentDataSet
@@ -19,9 +20,6 @@ def set_global_seed(seed):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
-SEED = 42
-set_global_seed(SEED)
 
 def init_metrics():
     return {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'roc_auc': []}
@@ -45,7 +43,6 @@ def print_mean_metrics(metrics, prefix=''):
     print(f'{prefix} Mean Recall: {np.mean(metrics["recall"]):.4f}, Std: {np.std(metrics["recall"]):.4f}')
     print(f'{prefix} Mean F1: {np.mean(metrics["f1"]):.4f}, Std: {np.std(metrics["f1"]):.4f}')
     print(f'{prefix} Mean ROC-AUC: {np.mean(metrics["roc_auc"]):.4f}, Std: {np.std(metrics["roc_auc"]):.4f}')
-
 
 def iterate(dataloader, model, loss_fn, optimizer, l1_lambda=0.001, train=True):
     epoch_loss = 0.0
@@ -88,13 +85,18 @@ def adjust_learning_rate(optimizer, factor=0.5):
         param_group['lr'] *= factor
 
 def main():
+    set_global_seed(42)
     parser = ArgumentParser()
     parser.add_argument('--num-sentiments', type=int, default=2, help='2: binary classification, 3: ternary.')
     parser.add_argument('--use-gaze', action='store_true', help='Use gaze features if set')
     parser.add_argument('--word-features-file', type=str, required=True, help='Path to the word level features file')
     args = parser.parse_args()
 
-    dataset = SentimentDataSet('sentiment_labels_task1.csv', args.word_features_file)
+    if args.use_gaze == True:
+        dataset = SentimentDataSet('sentiment_labels_task1.csv', args.word_features_file, use_dummy_features=False)
+    else:
+        dataset = SentimentDataSet('sentiment_labels_task1.csv', args.word_features_file, use_dummy_features=True)
+    
     lstm_units = 400
     loss_fn = BCELoss() 
     train_metrics = init_metrics()
@@ -109,11 +111,6 @@ def main():
     print(sum([1 for l in labels if l == 0]))
     print(sum(labels))
     
-    #train_val_index, test_index = train_test_split(np.arange(len(labels)), test_size=0.2, stratify=labels, random_state=42)
-    #train_val_labels = labels[train_val_index]
-    
-
-    # K-Fold Cross-Validation
     sss = StratifiedShuffleSplit(n_splits=10, test_size=0.2, random_state=42)
     best_model_state = None
     best_val_loss = float('inf')
@@ -122,15 +119,25 @@ def main():
     test_metrics = init_metrics()
 
     for train_index, val_index in sss.split(np.zeros(len(labels)), labels):
-        # split val set into val and test
         val_index, test_index = train_test_split(val_index, test_size=0.5, random_state=42)
         train_loader = dataset.get_split(train_index)
         val_loader = dataset.get_split(val_index)
         test_loader = dataset.get_split(test_index)
 
-        # for debugging, check that the train split has an even balance of labels
-        #print(f'sum of negative labels in train split {sum([1 for l in labels[train_index] if l == 0])}')
-        #print(sum(labels[train_index]))
+        if args.use_gaze:
+            scaler = StandardScaler()
+            train_features = dataset.word_features.iloc[train_index]
+            val_features = dataset.word_features.iloc[val_index]
+            test_features = dataset.word_features.iloc[test_index]
+
+            feature_cols = [col for col in train_features.columns if col != 'content']
+            train_features[feature_cols] = scaler.fit_transform(train_features[feature_cols])
+            val_features[feature_cols] = scaler.transform(val_features[feature_cols])
+            test_features[feature_cols] = scaler.transform(test_features[feature_cols])
+
+            dataset.word_features.iloc[train_index] = train_features
+            dataset.word_features.iloc[val_index] = val_features
+            dataset.word_features.iloc[test_index] = test_features
 
         model = BertSentimentClassifier(lstm_units, args.num_sentiments, args.use_gaze)
         if torch.cuda.is_available():
@@ -141,7 +148,6 @@ def main():
 
         no_improvement_epochs = 0
         for e in range(10):
-            # Adjusting the assignment to capture all three returned values
             _, _, train_results = iterate(train_loader, model, loss_fn, optimizer)
             val_loss, _, val_results = iterate(val_loader, model, loss_fn, optimizer, train=False)
 
@@ -164,30 +170,23 @@ def main():
 
             scheduler.step(val_loss)
 
-        # Accumulate metrics
         for metric in train_results:
             train_metrics[metric].append(train_results[metric])
             val_metrics[metric].append(val_results[metric])
         
-        # Test Set Evaluation
         _, _, test_results = iterate(test_loader, model, loss_fn, optimizer, train=False)
         print('\nTest Metrics:')
         print_metrics(test_results, 'TEST')
         for metric in test_results:
             test_metrics[metric].append(test_results[metric])
 
-
-    # Save the best model
     if best_model_state is not None:
-        torch.save(best_model_state, 'best_model.pth')
+        if args.use_gaze:
+            torch.save(best_model_state, 'best_model_gaze.pth')
+        else:
+            torch.save(best_model_state, 'best_model_dummy.pth')
         model.load_state_dict(best_model_state)
 
-    # Test Set Evaluation
-    #test_loss, test_results = iterate(test_loader, model, loss_fn, optimizer, train=False)
-    #print('\nTest Metrics:')
-    #print_metrics(test_results, 'TEST')
-
-    # Print mean metrics
     print('\n\n> 10-fold CV done')
     print_mean_metrics(train_metrics, 'TRAIN')
     print_mean_metrics(val_metrics, 'VAL')

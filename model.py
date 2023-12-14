@@ -43,10 +43,10 @@ class BertSentimentClassifier(nn.Module):
             hidden_states = outputs.hidden_states
 
         # Weighted sum of hidden states
-        weighted_hidden_states = sum(w * h for w, h in zip(self.layer_weights, hidden_states)) # Element-wise multiplication of weights and hidden states 
-        combined_hidden_states = weighted_hidden_states / torch.sum(self.layer_weights) # Normalize weights to sum to 1
+        weighted_hidden_states = sum(w * h for w, h in zip(self.layer_weights, hidden_states))
+        combined_hidden_states = weighted_hidden_states / torch.sum(self.layer_weights)
 
-        # If using cognitive features, concatenate them 
+        # Concatenate cognitive features if they are being used
         if self.use_cognitive_features and cognitive_features is not None:
             combined_input = torch.cat((combined_hidden_states, cognitive_features), dim=-1)
         else:
@@ -60,6 +60,7 @@ class BertSentimentClassifier(nn.Module):
         attention_weights = torch.softmax(self.attention(lstm_output), dim=1)
         context_vector = torch.sum(attention_weights * lstm_output, dim=1)
 
+        # Dropout and final classification
         context_vector = self.dropout(context_vector)
         logits = self.classifier(context_vector)
 

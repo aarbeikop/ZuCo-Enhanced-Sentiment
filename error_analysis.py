@@ -1,12 +1,15 @@
 import torch
+from scipy.stats import ttest_ind
 from model import BertSentimentClassifier
 from data import SentimentDataSet
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import pandas as pd
+import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 
-def load_model(path, hidden_size=400, num_labels=2, use_cognitive_features=False, cognitive_feature_size=5, dropout_prob=0.2):
+
+def load_model(path, hidden_size=400, num_labels=2, use_cognitive_features=True, cognitive_feature_size=5, dropout_prob=0.2):
     model = BertSentimentClassifier(hidden_size, num_labels, use_cognitive_features, cognitive_feature_size, dropout_prob)
     model.load_state_dict(torch.load(path, map_location=torch.device('cpu')), strict=False)
 
@@ -45,32 +48,48 @@ def print_error_analysis(labels, predictions):
     print("Confusion Matrix:")
     print(confusion_matrix(labels, predictions))
 
-def plot_confusion_matrix(labels, predictions):
+def perform_t_test(data1, data2):
+    t_stat, p_value = ttest_ind(data1, data2)
+    return t_stat, p_value
+
+def plot_confusion_matrix(labels, predictions, file_name):
     cm = confusion_matrix(labels, predictions)
     sns.heatmap(cm, annot=True, fmt='d')
     plt.xlabel('Predicted')
     plt.ylabel('True')
-    plt.show()
-    plt.savefig('confusion_matrix-Enhanced.png')
+    plt.title('Confusion Matrix')
+    plt.savefig(file_name)
+    plt.close()
 
 def main():
-    model_path = 'best_model.pth'
+    model_path_dummy = 'best_model_dummy.pth'
+    model_path_gaze = 'best_model_gaze.pth'
     dataset = SentimentDataSet('sentiment_labels_task1.csv', 'merged_word_data.csv')
     dataloader = dataset.get_split(range(len(dataset)))  # Load the full dataset
 
-    model = load_model(model_path)
-    predictions, labels = predict(model, dataloader)
+    # Evaluate the model with dummy features
+    model_dummy = load_model(model_path_dummy, use_cognitive_features=False)
+    predictions_dummy, labels_dummy = predict(model_dummy, dataloader)
+    print("Error Analysis for Model with Dummy Features:")
+    print_error_analysis(labels_dummy, predictions_dummy)
+    errors_dummy = examine_specific_errors(dataset, labels_dummy, predictions_dummy)
+    print("Sample Errors for Dummy Features Model:", errors_dummy)
+    plot_confusion_matrix(labels_dummy, predictions_dummy, 'confusion_matrix-Dummy.png')
 
-    print_error_analysis(labels, predictions)
-    errors = examine_specific_errors(dataset, labels, predictions)
-    print("Sample Errors:", errors)
+    # Evaluate the model with gaze features
+    model_gaze = load_model(model_path_gaze, use_cognitive_features=True)
+    predictions_gaze, labels_gaze = predict(model_gaze, dataloader)
+    print("Error Analysis for Model with Gaze Features:")
+    print_error_analysis(labels_gaze, predictions_gaze)
+    errors_gaze = examine_specific_errors(dataset, labels_gaze, predictions_gaze)
+    print("Sample Errors for Gaze Features Model:", errors_gaze)
+    plot_confusion_matrix(labels_gaze, predictions_gaze, 'confusion_matrix-Gaze.png')
 
-    plot_confusion_matrix(labels, predictions)
-
-    # Further analysis can be added here, such as:
-    # - Inspecting specific examples of errors
-    # - Correlating errors with specific features or data properties
-    # - Advanced statistical analysis or visualizations
+    # Perform t-test
+    accuracy_dummy = accuracy_score(labels_dummy, predictions_dummy)
+    accuracy_gaze = accuracy_score(labels_gaze, predictions_gaze)
+    t_stat, p_value = perform_t_test([accuracy_dummy], [accuracy_gaze])
+    print(f"T-test between models: T-statistic = {t_stat}, P-value = {p_value}")
 
 if __name__ == '__main__':
     main()

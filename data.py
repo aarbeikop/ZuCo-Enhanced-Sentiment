@@ -7,9 +7,10 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
 class SentimentDataSet(Dataset):
-    def __init__(self, sentences_file, word_features_file, max_length=500):
+    def __init__(self, sentences_file, word_features_file, max_length=500, use_dummy_features=False):
         self.sentences_data = pd.read_csv(sentences_file, delimiter=';')
         self.sentences_data = self.sentences_data.dropna(subset=['sentiment_label'])
+        self.use_dummy_features = use_dummy_features
 
         # Convert sentiment labels to binary (0: non-positive, 1: positive) 
         self.sentences_data['sentiment_label'] = self.sentences_data['sentiment_label'].apply(lambda x: 0 if x == -1 else 1)
@@ -35,9 +36,9 @@ class SentimentDataSet(Dataset):
                 self.word_features[col] = self.word_features[col].apply(lambda x: 0.0 if x == '[]' else float(x))
 
         # Normalize the features using Z-score normalization
-        scaler = StandardScaler()
-        feature_cols = self.word_features.columns.drop('content')
-        self.word_features[feature_cols] = scaler.fit_transform(self.word_features[feature_cols])
+        #scaler = StandardScaler()
+        #feature_cols = self.word_features.columns.drop('content')
+        #self.word_features[feature_cols] = scaler.fit_transform(self.word_features[feature_cols])
 
     def align_features_with_tokens(self, sentence, word_features):
         tokenized_sentence = self.tokenizer(sentence, return_tensors='pt', max_length=self.max_length, padding='max_length', truncation=True)
@@ -108,13 +109,35 @@ class SentimentDataSet(Dataset):
         input_ids = tokenized_sentence['input_ids'].squeeze(0)
         attention_mask = tokenized_sentence['attention_mask'].squeeze(0)
 
+        tokenized_sentence, real_et_features = self.align_features_with_tokens(sentence, word_features_for_sentence)
+
+        if self.use_dummy_features:
+            # Generate dummy cognitive features for this sentence
+            et_features = self.get_dummy_features(len(tokenized_sentence['input_ids'].squeeze(0)))
+        else:
+            et_features = real_et_features
+
+        label_binary = 0 if sentence_row['sentiment_label'] == 0 else 1
+
         return {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
+            'input_ids': tokenized_sentence['input_ids'].squeeze(0),
+            'attention_mask': tokenized_sentence['attention_mask'].squeeze(0),
             'et_features': et_features,
             'labels': torch.tensor(label_binary, dtype=torch.long)
         }
 
+    def get_dummy_features(self, num_tokens):
+        # Generate dummy features for each token in the sentence
+        dummy_features = []
+        for _ in range(num_tokens):
+            single_feature = []
+            for v in self.word_features.columns[1:]:
+                min_val = self.word_features[v].min()
+                max_val = self.word_features[v].max()
+                single_feature.append(np.random.uniform(min_val, max_val))
+            dummy_features.append(single_feature)
+
+        return torch.tensor(dummy_features, dtype=torch.float32)
 
     def get_split(self, indices):
         return DataLoader(
