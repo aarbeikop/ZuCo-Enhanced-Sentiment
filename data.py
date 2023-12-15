@@ -6,6 +6,8 @@ from transformers import BertTokenizer
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
+# used data.py from https://github.com/chipbautista/zuco-sentiment-analysis/blob/master/data.py to get me started
+
 class SentimentDataSet(Dataset):
     def __init__(self, sentences_file, word_features_file, max_length=500, use_dummy_features=False):
         self.sentences_data = pd.read_csv(sentences_file, delimiter=';')
