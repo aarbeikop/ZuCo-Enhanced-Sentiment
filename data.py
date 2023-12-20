@@ -14,7 +14,7 @@ class SentimentDataSet(Dataset):
         self.sentences_data = self.sentences_data.dropna(subset=['sentiment_label'])
         self.use_dummy_features = use_dummy_features
 
-        # Convert sentiment labels to binary (0: non-positive, 1: positive) 
+        # Convert sentiment labels to binary (0: negative, 1: non-negative) 
         self.sentences_data['sentiment_label'] = self.sentences_data['sentiment_label'].apply(lambda x: 0 if x == -1 else 1)
 
         self.word_features = pd.read_csv(word_features_file)
@@ -63,7 +63,7 @@ class SentimentDataSet(Dataset):
                     word_index += 1
 
                 if word_index < len(word_features):
-                    aligned_features.append(word_features.iloc[word_index][6:].tolist()) # we only want the averaged features
+                    aligned_features.append(word_features.iloc[word_index][1:6].tolist()) # we only want the averaged features
                 else:
                     aligned_features.append([0.0] * 5)  # default to zero if no matching feature found
 
@@ -71,8 +71,6 @@ class SentimentDataSet(Dataset):
                     word_index += 1
 
         return tokenized_sentence, torch.tensor(aligned_features, dtype=torch.float32)
-
-
 
     def __len__(self):
         return len(self.sentences_data)
@@ -99,11 +97,9 @@ class SentimentDataSet(Dataset):
         # handle the case where no word features are found
         if word_features_for_sentence.empty:
             word_features_for_sentence = pd.DataFrame(0, index=np.arange(len(words_in_sentence)), columns=self.word_features.columns)
-
-        # align the features with the tokens, and return the tokenized sentence and the aligned features
-        tokenized_sentence, et_features = self.align_features_with_tokens(sentence, word_features_for_sentence)
         
-
+        tokenized_sentence = self.tokenizer(sentence, return_tensors='pt', max_length=self.max_length, padding='max_length', truncation=True)
+        
         # convert the sentiment label from [-1, 0, 1] to binary [0, 1]
         label = sentence_row['sentiment_label']
         label_binary = 0 if label == 0 else 1
@@ -115,7 +111,7 @@ class SentimentDataSet(Dataset):
 
         if self.use_dummy_features:
             # Generate dummy cognitive features for this sentence
-            et_features = self.get_dummy_features(len(tokenized_sentence['input_ids'].squeeze(0)))
+            et_features = self.get_dummy_features(len(tokenized_sentence['input_ids'].squeeze(0)), self.word_features)
         else:
             et_features = real_et_features
 
@@ -128,18 +124,19 @@ class SentimentDataSet(Dataset):
             'labels': torch.tensor(label_binary, dtype=torch.long)
         }
 
-    def get_dummy_features(self, num_tokens):
-        # Generate dummy features for each token in the sentence
-        dummy_features = []
-        for _ in range(num_tokens):
-            single_feature = []
-            for v in self.word_features.columns[1:]:
-                min_val = self.word_features[v].min()
-                max_val = self.word_features[v].max()
-                single_feature.append(np.random.uniform(min_val, max_val))
-            dummy_features.append(single_feature)
+    def get_dummy_features(self, num_tokens, et_features):
+        num_columns = 5
+        min_max_ranges = [(et_features.iloc[:, i + 1].min(), et_features.iloc[:, i + 1].max()) for i in range(1, num_columns+1)]
 
-        return torch.tensor(dummy_features, dtype=torch.float32)
+        dummy_features = []
+        # create 5 dummy features for each token
+        for i in range(num_tokens):
+            dummy_features.append([np.random.uniform(low=min_max_ranges[j][0], high=min_max_ranges[j][1]) for j in range(num_columns)]) 
+        
+        dummy_features = torch.tensor(dummy_features, dtype=torch.float32)
+
+        return dummy_features
+
 
     def get_split(self, indices):
         return DataLoader(
@@ -152,7 +149,6 @@ class SentimentDataSet(Dataset):
         skf = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=42)
         for train_idx, test_idx in skf.split(np.zeros(len(labels)), labels):
             yield self.get_split(train_idx), self.get_split(test_idx)
-
 
 
 
