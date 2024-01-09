@@ -36,10 +36,12 @@ The `BertSentimentClassifier` in `model.py` defines two model architectures:
 
 ## Usage
 To train the models, run the `train.py` script:
-with gaze features:
-python train.py  --use-gaze --word-features-file path_to_word_features_file.csv
-with dummy features:
-python train.py --word-features-file path_to_word_features_file.csv
+
+- with gaze features:
+  - python train.py  --use-gaze --word-features-file path_to_word_features_file.csv
+  
+- with dummy features:
+  - python train.py --word-features-file path_to_word_features_file.csv
 
 
 
