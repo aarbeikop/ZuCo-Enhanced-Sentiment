@@ -7,6 +7,8 @@ This project focuses on sentiment analysis using the ZuCo dataset. It involves t
 
 This work is inspired by the research presented in the paper "Advancing NLP with Cognitive Language Processing Signals" (https://arxiv.org/pdf/1904.02682.pdf) and utilizes the ZuCo dataset for exploring cognitive feature enhancement in sentiment analysis.
 
+Code from https://github.com/chipbautista/zuco-sentiment-analysis was used.
+
 ## Features
 - Utilizes BERT for word-level representations.
 - Incorporates LSTM for sequential modeling and sentence-level representation.
