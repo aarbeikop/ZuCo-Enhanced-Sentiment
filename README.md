@@ -24,19 +24,20 @@ This work is inspired by the research presented in the paper "Advancing NLP with
 - Seaborn and Matplotlib for visualization
 
 ## Dataset
-The project uses the ZuCo dataset for sentiment analysis. Ensure the dataset is structured as per the requirements described in the `data.py` script.
+The project uses the ZuCo dataset for sentiment analysis. Ensure the dataset is structured as per the requirements described in the `data.py` script. You can find the dataset here: https://osf.io/q3zws/
+or here: https://github.com/DS3Lab/zuco-nlp/tree/master/sentiment-analysis
 
 ## Model Architecture
 The `BertSentimentClassifier` in `model.py` defines two model architectures:
 1. Standard BERT-LSTM for sentiment classification.
-2. BERT-LSTM with cognitive feature enhancement (e.g., total fixation duration attached to each word representation).
+2. BERT-LSTM with cognitive feature enhancement (Eye-Tracking).
 
 ## Usage
 To train the models, run the `train.py` script:
-python train.py --num-sentiments 2 --word-features-file path_to_word_features_file.csv
-
-## Error Analysis
-For error analysis and visualization, execute the provided error analysis script.
+with gaze features:
+python train.py  --use-gaze --word-features-file path_to_word_features_file.csv
+with dummy features:
+python train.py --word-features-file path_to_word_features_file.csv
 
 
 
