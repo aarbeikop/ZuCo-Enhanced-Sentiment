@@ -26,7 +26,7 @@ Code from https://github.com/chipbautista/zuco-sentiment-analysis was used.
 - Seaborn and Matplotlib for visualization
 
 ## Dataset
-The project uses the ZuCo dataset for sentiment analysis. Ensure the dataset is structured as per the requirements described in the `data.py` script. You can find the dataset here: https://osf.io/q3zws/
+The project uses the ZuCo dataset for sentiment analysis. You can find the dataset here: https://osf.io/q3zws/
 or here: https://github.com/DS3Lab/zuco-nlp/tree/master/sentiment-analysis
 
 ## Model Architecture
